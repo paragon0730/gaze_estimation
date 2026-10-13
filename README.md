@@ -1,51 +1,39 @@
-# MPIIGaze 시선 추정: EDA와 교재 코드 기반 파이프라인
+# MPIIGaze gaze estimation
 
-[ssuai/gaze_estimation](https://github.com/ssuai/gaze_estimation)을 fork해 다음을 추가함.
+수업 저장소(ssuai/gaze_estimation)를 fork해서 EDA랑 교재 코드 기반 CNN 학습 파이프라인을 추가함.
 
-1. **EDA** — [eda.ipynb](eda.ipynb)
-2. **파이프라인** — 『밑바닥부터 시작하는 딥러닝』 교재 코드(`common/`, numpy)만으로 만든 CNN을 leave-one-person-out으로 학습·평가. [pipeline.ipynb](pipeline.ipynb), [train_lopo.py](train_lopo.py)
+- `eda.ipynb` : 데이터 탐색
+- `pipeline.ipynb` : 모델 구조, gradient check, p00 fold 학습 과정, 결과 분석
+- `train_lopo.py` : 15명 leave-one-person-out 학습
+- `gaze/` : 데이터 로딩, 모델, 학습 루프
+- `common/` : 교재(밑바닥부터 시작하는 딥러닝) common 폴더 복사본
 
-두 노트북은 실제 MPIIGaze 데이터로 실행한 결과가 저장되어 있음 (GitHub Actions에서 다운로드·전처리·학습·실행).
+## 결과
 
-## 결과: leave-one-person-out 각도 오차 (°)
+leave-one-person-out 각도 오차 (°)
 
 | 방법 | p00 | p01 | p02 | p03 | p04 | p05 | p06 | p07 | p08 | p09 | p10 | p11 | p12 | p13 | p14 | 평균 |
 |------|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|------|
 | 평균 gaze 예측 | 8.42 | 8.61 | 9.00 | 9.60 | 8.97 | 9.73 | 10.36 | 9.50 | 9.62 | 8.97 | 8.66 | 8.43 | 8.60 | 9.00 | 10.76 | 9.22 |
-| ridge 회귀 (수업 baseline) | 5.31 | 7.76 | 6.55 | 8.05 | 6.40 | 7.35 | 7.59 | 7.97 | 7.89 | 8.51 | 6.93 | 6.63 | 7.07 | 7.85 | 7.20 | 7.27 |
-| **GazeLeNet (교재 numpy CNN)** | 5.09 | 6.73 | 6.52 | 6.11 | 6.66 | 5.74 | 6.53 | 6.99 | 6.52 | 7.81 | 7.26 | 5.70 | 5.68 | 6.95 | 5.75 | **6.40** |
+| ridge (baseline) | 5.31 | 7.76 | 6.55 | 8.05 | 6.40 | 7.35 | 7.59 | 7.97 | 7.89 | 8.51 | 6.93 | 6.63 | 7.07 | 7.85 | 7.20 | 7.27 |
+| CNN | 5.09 | 6.73 | 6.52 | 6.11 | 6.66 | 5.74 | 6.53 | 6.99 | 6.52 | 7.81 | 7.26 | 5.70 | 5.68 | 6.95 | 5.75 | 6.40 |
 
-- 15명 중 13명에서 ridge보다 낮음 (p04, p10은 조금 높음)
-- 평균 gaze 예측은 fold마다 학습 13명의 평균을 씀 (아래 검증 분할 때문). 14명 평균으로 계산한 값은 9.21°로 README 아래 표와 같음
-- 원본 수치: [results/lopo_results.csv](results/lopo_results.csv), fold별 학습 기록: [results/lopo/](results/lopo/)
+CNN 평균 6.40°로 ridge(7.27°)보다 낮음. p04, p10만 ridge보다 조금 높게 나옴.
+fold별 수치는 `results/lopo_results.csv`, 학습 기록은 `results/lopo/`에 있음.
 
-## 파이프라인
+## 모델
 
-```
-eye (1,36,60) → Conv(20,5×5) → ReLU → Pool → Conv(50,5×5) → ReLU → Pool → Affine(500) → ReLU ─┐
-head pose (2) ─────────────────────────────────────────────────────────────────────────────────┴→ Concat → Affine(2) → MSE
-```
+MPIIGaze 논문(Zhang et al., 2015)에 나온 LeNet 구조를 교재 7장 SimpleConvNet을 바꿔서 구현함.
 
-- 구조는 MPIIGaze 논문(Zhang et al., CVPR 2015)의 CNN과 같음
-- 계층·im2col·옵티마이저는 교재 `common/`을 그대로 씀. 바꾼 곳은 float32 유지를 위한 dtype 3줄뿐 ([common/\_\_init\_\_.py](common/__init__.py))
-- 새로 만든 계층: `Concat`(head pose 결합), `MeanSquaredLoss`(회귀 손실) — [gaze/layers.py](gaze/layers.py). 수치 미분으로 기울기 확인 (pipeline.ipynb 2.2절)
-- 학습: Adam(lr 5e-4, 에폭마다 ×0.8), 배치 128, 10 에폭, He 초깃값
-- 평가 규칙(README 아래 "과제" 절)을 지킴
-  - 테스트하는 사람은 학습·표준화·에폭 선택에 쓰지 않음
-  - 검증은 학습용 14명 중 한 명(테스트 다음 번호)을 사람 단위로 떼어 내 에폭 선택에만 씀
-  - 하이퍼파라미터는 모든 fold에 같음 ([gaze/experiment.py](gaze/experiment.py) `CONFIG`), fold마다 새로 초기화
+conv(20, 5x5) - relu - pool - conv(50, 5x5) - relu - pool - affine(500) - relu - [head pose concat] - affine(2)
 
-| 파일 | 내용 |
-|------|------|
-| `common/` | 교재 공통 모듈 (MIT, Koki Saitoh) |
-| `gaze/data.py` | 라벨·이미지 읽기, npz 캐시, fold 분할, 표준화 |
-| `gaze/model.py` | `GazeLeNet` (교재 `SimpleConvNet` 확장) |
-| `gaze/trainer.py` | 미니배치 학습 루프, 검증 기반 에폭 선택 |
-| `gaze/experiment.py` | fold 하나 실행 (`run_fold`) |
-| `train_lopo.py` | 15-fold 학습·요약 CLI |
-| `.github/workflows/pipeline.yml` | 다운로드·전처리 → fold별 병렬 학습 → 노트북 실행 → 결과 커밋 |
+- 교재 layers.py의 Convolution, Pooling, Affine, Relu를 그대로 사용
+- 분류가 아니라 회귀라서 MSE loss 계층, head pose를 붙이는 concat 계층을 따로 만듦 (`gaze/layers.py`). 수치 미분이랑 비교해서 backward 확인함
+- Adam (lr 5e-4, epoch마다 0.8배), batch 128, 10 epoch, He 초기값
+- 정규화 통계는 학습하는 사람들로만 계산, validation도 학습용 14명 중 1명을 빼서 사용 (test 사람은 안 씀)
+- float32로 돌리려고 교재 util.py의 im2col/col2im, Pooling backward에서 dtype만 맞춤
 
-### 실행
+## 실행
 
 ```
 pip install numpy opencv-python scipy matplotlib pandas jupyter
@@ -54,18 +42,18 @@ python train_lopo.py
 python train_lopo.py --summarize
 ```
 
-- CPU numpy라 fold 하나에 20분 정도 걸림. `python train_lopo.py --folds p00`처럼 일부만 돌릴 수 있음
-- 노트북은 Colab 배지로도 열 수 있음 (첫 셀이 저장소 clone과 데이터 전처리를 함)
+CPU에서 fold 하나에 20분 정도 걸려서 GitHub Actions에서 fold별로 나눠서 돌림 (`.github/workflows/pipeline.yml`).
 
-## EDA 요약
+## EDA 하면서 본 것
 
-- 45,000개(15명 × 왼눈·오른눈 1,500개씩), 결측 없음. 원본 213,658 프레임 중 일부만 쓰며 사람마다 기록 기간(7~67일)이 크게 다름
-- histogram equalization으로 밝기 분포는 고르지만, 눈 모양·안경·흐림 같은 외형 차이가 사람마다 뚜렷함 → 사람 단위 일반화가 핵심
-- gaze는 yaw 0.0° ± 8.7°, pitch −8.8° ± 5.2°로 범위·중심이 달라 정답을 축별로 표준화함
-- gaze와 head pose의 상관이 작음(|r| ≤ 0.11). 이미지가 주된 정보원이고, 픽셀–gaze 상관은 홍채 양옆(yaw)과 눈꺼풀(pitch)에 모여 있음 → CNN이 적합
-- **오른눈 head yaw가 0°로 몰림** (표준편차 왼눈 11.6° vs 오른눈 1.6°). 전처리 `head_flip`이 회전 행렬 일부만 뒤집어 yaw 정보가 사라지는 것으로 보임 (eda.ipynb 6.1절에서 재현). 수업 baseline과 같은 데이터로 비교하려고 전처리는 고치지 않음
+- 15명 x 3000개, 사람마다 왼눈 1500 / 오른눈 1500. 결측값 없음
+- histogram equalization 때문에 밝기 분포는 비슷한데 사람마다 눈 모양, 안경 유무 차이가 큼
+- gaze pitch가 거의 항상 음수 (화면이 카메라 아래에 있어서). yaw랑 pitch 범위가 달라서 target을 축별로 standardize함
+- gaze와 head pose 상관이 작음 (|r| 0.11 이하)
+- 오른눈 샘플은 head yaw가 거의 0으로 나옴. 전처리의 head_flip에서 yaw가 날아가는 것 같음 (eda.ipynb 6.1). baseline이랑 같은 데이터로 비교하려고 전처리는 그대로 둠
 
 ---
+
 
 ## 데이터 폴더 구조
 
