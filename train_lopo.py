@@ -2,7 +2,7 @@
 
     python train_lopo.py                       # 15 fold 전부 → results/lopo/pXX.json
     python train_lopo.py --folds p00 p01       # 일부 fold만 (GitHub Actions에서 fold별 병렬 실행)
-    python train_lopo.py --summarize           # pXX.json을 모아 results/lopo_results.md, .csv 생성
+    python train_lopo.py --summarize           # pXX.json을 모아 results/lopo_results.csv 생성, 표 출력
 
 하이퍼파라미터 기본값은 gaze/experiment.py의 CONFIG이며 모든 fold에 같게 쓴다.
 """
@@ -19,7 +19,7 @@ from gaze.experiment import CONFIG, load_results, run_fold, save_result
 RIDGE = [5.31, 7.76, 6.55, 8.05, 6.40, 7.35, 7.59, 7.97, 7.89, 8.51, 6.93, 6.63, 7.07, 7.85, 7.20]
 
 
-def summarize(out_dir, md_path, csv_path):
+def summarize(out_dir, csv_path):
     res = load_results(out_dir)
     if not res:
         raise SystemExit(f"{out_dir}에 결과가 없다")
@@ -49,8 +49,6 @@ def summarize(out_dir, md_path, csv_path):
         f"- fold당 학습 시간: 평균 {np.mean(secs) / 60:.1f}분 (GitHub Actions ubuntu-latest, CPU numpy)",
     ]
     text = "\n".join(lines + notes) + "\n"
-    with open(md_path, "w") as f:
-        f.write(text)
     with open(csv_path, "w") as f:
         f.write("person,cnn,ridge,mean_gaze,best_epoch\n")
         for p, c, r, m, e in zip(persons, cnn, ridge, mean_b, best_epochs):
@@ -72,7 +70,7 @@ def main():
     args = p.parse_args()
 
     if args.summarize:
-        summarize(args.out, "results/lopo_results.md", "results/lopo_results.csv")
+        summarize(args.out, "results/lopo_results.csv")
         return
 
     cfg = {k: getattr(args, k) for k in ("epochs", "batch_size", "lr", "lr_decay", "dropout_ratio", "seed")

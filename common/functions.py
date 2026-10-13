@@ -7,7 +7,7 @@ def identity_function(x):
 
 
 def step_function(x):
-    return np.array(x > 0, dtype=int)  # [수정] numpy 2.x에서 np.int 제거됨
+    return np.array(x > 0, dtype=np.int)
 
 
 def sigmoid(x):
